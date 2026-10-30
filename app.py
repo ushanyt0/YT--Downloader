@@ -132,7 +132,7 @@ def worker(url, mode, quality, playlist, subs):
     if playlist:
         name = "%(playlist_title)s/%(playlist_index)s - %(title)s.%(ext)s"
     else:
-        name = "%(title)s.%(ext)s"
+        name = "%(title)s [%(height)sp].%(ext)s" if mode != "audio" else "%(title)s.%(ext)s"
     opts = {
         "outtmpl": OUT + "/" + name,
         "noplaylist": not playlist,
