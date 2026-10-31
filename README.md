@@ -1,4 +1,4 @@
-# YT Downloader
+# All-in-One Downloader
 
 A small self-hosted web app for downloading videos and audio with [yt-dlp](https://github.com/yt-dlp/yt-dlp). It runs on your own Android phone (Termux) or computer and you use it from your browser.
 
@@ -44,3 +44,9 @@ This prints a temporary public link. Anyone with the link can download using you
 ## Please note
 
 Only download content you have the right to download, such as your own videos or Creative Commons content. Downloading other content may break YouTube's Terms of Service or copyright law. You are responsible for how you use this tool.
+
+YouTube, Facebook, Instagram, TikTok and many more sites supported by yt-dlp. Public videos usually work. Private posts and many Instagram/Facebook links need a login and will not work.
+
+---
+
+Powered by Shan codex
