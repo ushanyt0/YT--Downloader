@@ -1,13 +1,17 @@
+import os
 import re
+import shutil
 import threading
-from flask import Flask, jsonify, request
+import time
+from flask import Flask, jsonify, request, send_file
 import yt_dlp
 
 DEFAULT_URL = "https://youtu.be/gwov8azLd2Q?si=0O47vcjsMwJBmP9_"
-OUT = "/storage/emulated/0/Download"
+TMP = os.path.expanduser("~/yt_tmp")
 
 app = Flask(__name__)
 state = {"status": "idle", "percent": 0, "code": "ready", "detail": ""}
+result = {"path": None}
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -21,6 +25,7 @@ label.c input{width:auto;margin:0}
 .bar{background:#30363d;border-radius:8px;height:22px;overflow:hidden;margin-top:12px}
 #fill{background:#238636;height:100%;width:0%;transition:width .3s}
 #msg{margin-top:8px;word-break:break-word}
+.btn{display:none;text-align:center;padding:12px;margin:10px 0;border-radius:8px;background:#1f6feb;color:#fff;text-decoration:none;font-weight:bold}
 </style></head><body>
 <select id="lang" onchange="setLang(this.value)">
 <option value="en">English</option>
@@ -40,12 +45,13 @@ label.c input{width:auto;margin:0}
 <button onclick="go()" data-k="go"></button>
 <div class="bar"><div id="fill"></div></div>
 <div id="msg"></div>
+<a id="save" class="btn" href="/file" data-k="save"></a>
 <script>
 var L={
-en:{video:"Video",audio:"Audio (MP3)",best:"Best available",high:"High",med:"Medium",low:"Low",playlist:"Download whole playlist",subs:"Subtitles (English)",go:"Download",ready:"Ready",starting:"Starting...",downloading:"Downloading...",processing:"Processing...",done:"Done! Check your Download folder",error:"Error",busy:"A download is already running"},
-si:{video:"Video",audio:"Audio (MP3)",best:"ලබාගත හැකි හොඳම",high:"ඉහළ",med:"මධ්‍යම",low:"අඩු",playlist:"Playlist එක සම්පූර්ණයෙන්ම",subs:"Subtitles (English)",go:"Download කරන්න",ready:"සූදානම්",starting:"පටන් ගන්නවා...",downloading:"Download වෙනවා...",processing:"සකස් කරනවා...",done:"Download ඉවරයි! Download folder එක බලන්න",error:"Error",busy:"දැනටමත් download එකක් යනවා"},
-ta:{video:"வீடியோ",audio:"ஆடியோ (MP3)",best:"கிடைக்கும் சிறந்தது",high:"உயர்",med:"நடுத்தரம்",low:"குறைவு",playlist:"முழு பிளேலிஸ்ட்டையும் பதிவிறக்கு",subs:"வசனங்கள் (English)",go:"பதிவிறக்கு",ready:"தயார்",starting:"தொடங்குகிறது...",downloading:"பதிவிறக்கப்படுகிறது...",processing:"செயலாக்கப்படுகிறது...",done:"முடிந்தது! Download folder-ஐப் பாருங்கள்",error:"பிழை",busy:"ஒரு பதிவிறக்கம் ஏற்கனவே நடக்கிறது"},
-hi:{video:"वीडियो",audio:"ऑडियो (MP3)",best:"सबसे अच्छी उपलब्ध",high:"उच्च",med:"मध्यम",low:"कम",playlist:"पूरी प्लेलिस्ट डाउनलोड करें",subs:"सबटाइटल (English)",go:"डाउनलोड करें",ready:"तैयार",starting:"शुरू हो रहा है...",downloading:"डाउनलोड हो रहा है...",processing:"प्रोसेस हो रहा है...",done:"हो गया! Download folder देखें",error:"त्रुटि",busy:"एक डाउनलोड पहले से चल रहा है"}
+en:{video:"Video",audio:"Audio (MP3)",best:"Best available",high:"High",med:"Medium",low:"Low",playlist:"Download whole playlist",subs:"Subtitles (English)",go:"Download",save:"Save file",ready:"Ready",starting:"Starting...",downloading:"Downloading...",processing:"Processing...",done:"Done! Saving the file...",error:"Error",busy:"A download is already running"},
+si:{video:"Video",audio:"Audio (MP3)",best:"ලබාගත හැකි හොඳම",high:"ඉහළ",med:"මධ්‍යම",low:"අඩු",playlist:"Playlist එක සම්පූර්ණයෙන්ම",subs:"Subtitles (English)",go:"Download කරන්න",save:"File එක save කරන්න",ready:"සූදානම්",starting:"පටන් ගන්නවා...",downloading:"Download වෙනවා...",processing:"සකස් කරනවා...",done:"ඉවරයි! File එක save වෙනවා...",error:"Error",busy:"දැනටමත් download එකක් යනවා"},
+ta:{video:"வீடியோ",audio:"ஆடியோ (MP3)",best:"கிடைக்கும் சிறந்தது",high:"உயர்",med:"நடுத்தரம்",low:"குறைவு",playlist:"முழு பிளேலிஸ்ட்டையும் பதிவிறக்கு",subs:"வசனங்கள் (English)",go:"பதிவிறக்கு",save:"கோப்பைச் சேமி",ready:"தயார்",starting:"தொடங்குகிறது...",downloading:"பதிவிறக்கப்படுகிறது...",processing:"செயலாக்கப்படுகிறது...",done:"முடிந்தது! கோப்பு சேமிக்கப்படுகிறது...",error:"பிழை",busy:"ஒரு பதிவிறக்கம் ஏற்கனவே நடக்கிறது"},
+hi:{video:"वीडियो",audio:"ऑडियो (MP3)",best:"सबसे अच्छी उपलब्ध",high:"उच्च",med:"मध्यम",low:"कम",playlist:"पूरी प्लेलिस्ट डाउनलोड करें",subs:"सबटाइटल (English)",go:"डाउनलोड करें",save:"फ़ाइल सेव करें",ready:"तैयार",starting:"शुरू हो रहा है...",downloading:"डाउनलोड हो रहा है...",processing:"प्रोसेस हो रहा है...",done:"हो गया! फ़ाइल सेव हो रही है...",error:"त्रुटि",busy:"एक डाउनलोड पहले से चल रहा है"}
 };
 var lang="si";
 try{lang=localStorage.getItem("lang")||"si";}catch(e){}
@@ -76,6 +82,7 @@ function show(s){
   if(s.status==="running"||s.status==="done"){m+=" ("+s.percent+"%)";}
   document.getElementById("fill").style.width=s.percent+"%";
   document.getElementById("msg").innerText=m;
+  document.getElementById("save").style.display=(s.status==="done")?"block":"none";
 }
 function apply(){
   var t=L[lang];
@@ -111,7 +118,10 @@ function go(){
 function poll(){
   fetch("/progress").then(function(r){return r.json()}).then(function(s){
     show(s);
-    if(s.status!=="running"){clearInterval(timer);}
+    if(s.status!=="running"){
+      clearInterval(timer);
+      if(s.status==="done"){document.getElementById("save").click();}
+    }
   });
 }
 </script></body></html>"""
@@ -129,12 +139,16 @@ def hook(d):
 
 
 def worker(url, mode, quality, playlist, subs):
+    shutil.rmtree(TMP, ignore_errors=True)
+    job = os.path.join(TMP, str(int(time.time())))
+    os.makedirs(job, exist_ok=True)
+    result["path"] = None
     if playlist:
         name = "%(playlist_title)s/%(playlist_index)s - %(title)s.%(ext)s"
     else:
-        name = "%(title)s [%(height)sp].%(ext)s" if mode != "audio" else "%(title)s.%(ext)s"
+        name = "%(title)s.%(ext)s"
     opts = {
-        "outtmpl": OUT + "/" + name,
+        "outtmpl": job + "/" + name,
         "noplaylist": not playlist,
         "js_runtimes": {"node": {}},
         "progress_hooks": [hook],
@@ -166,6 +180,16 @@ def worker(url, mode, quality, playlist, subs):
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
+        files = []
+        for root, _, names in os.walk(job):
+            for n in names:
+                files.append(os.path.join(root, n))
+        if not files:
+            raise Exception("No file was created")
+        if len(files) == 1:
+            result["path"] = files[0]
+        else:
+            result["path"] = shutil.make_archive(job, "zip", job)
         state.update(status="done", percent=100, code="done", detail="")
     except Exception as e:
         err = re.sub(r"\x1b\[[0-9;]*m", "", str(e))
@@ -196,6 +220,15 @@ def start():
 @app.route("/progress")
 def progress():
     return jsonify(state)
+
+
+@app.route("/file")
+def get_file():
+    p = result["path"]
+    if p and os.path.exists(p):
+        name = "videos.zip" if p.endswith(".zip") else None
+        return send_file(p, as_attachment=True, download_name=name)
+    return "No file", 404
 
 
 if __name__ == "__main__":
